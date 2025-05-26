@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include <string.h>
 // Includes do FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
+#include "semphr.h"
 // Includes para manipular a GPIO
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
@@ -18,6 +20,7 @@
 // Botões
 #define BUTTON_A 5
 #define BUTTON_B 6
+#define JOYSTICK_BUTTON 22
 // Buzzers
 #define BUZZER_A 21
 #define BUZZER_B 10
@@ -33,27 +36,254 @@
 // Constantes para a matriz de leds
 #define IS_RGBW false
 #define LED_MATRIX_PIN 7
+// Máximo de usuários
+#define MAX_USERS 9
 
 // Variáveis da PIO declaradas no escopo global
 PIO pio;
 uint sm;
 // Booleano para o display
 bool cor = true;
+ssd1306_t ssd;  // Inicializa a estrutura do display GLOBALMENTE
 
 // Variáveis do PWM (setado para freq. de 312,5 Hz)
 uint wrap = 2000;
 uint clkdiv = 25;
 
+// Variável global para a quantidade de usuários
+uint users_online = 0;
+
+// Mutex
+SemaphoreHandle_t xDisplayMutex;
+// Semáforos
+SemaphoreHandle_t xSemBinario;
+SemaphoreHandle_t xSemContagem;
+
+
+// FUNÇÕES AUXILIARES
+// Função para configurar o PWM e iniciar com 0% de DC
+void set_pwm(uint gpio, uint wrap){
+    gpio_set_function(gpio, GPIO_FUNC_PWM);
+    uint slice_num = pwm_gpio_to_slice_num(gpio);
+    pwm_set_clkdiv(slice_num, clkdiv);
+    pwm_set_wrap(slice_num, wrap);
+    pwm_set_enabled(slice_num, true); 
+    pwm_set_gpio_level(gpio, 0);
+}
+
+// Função que desenha o frame fixo do display OLED
+void DisplayFrame(uint vagas_ocupadas){
+    char string_ocupadas[4];
+    sprintf(string_ocupadas, "%d", vagas_ocupadas);
+    char string_total[4];
+    sprintf(string_total, "%d", MAX_USERS);
+    char string_disponivel[4];
+    sprintf(string_disponivel, "%d", MAX_USERS-vagas_ocupadas);
+
+    ssd1306_fill(&ssd, false); // Limpa o display
+
+    // Frame que será reutilizado para todos
+    ssd1306_rect(&ssd, 0, 0, 128, 64, cor, !cor);
+    // Nome superior
+    ssd1306_rect(&ssd, 0, 0, 128, 12, cor, cor); // Fundo preenchido
+    ssd1306_draw_string(&ssd, "PainelControle", 7, 3, true);
+    // Ocupado
+    ssd1306_draw_string(&ssd, "Ocupado:", 4, 16, false);
+    // Deslocando o texto conforme a quantidade de vagas
+    if(users_online>=100){
+        ssd1306_draw_string(&ssd, string_ocupadas, 66, 16, false);
+    }
+    else if(users_online >=10){
+        ssd1306_draw_string(&ssd, string_ocupadas, 74, 16, false);
+    }
+    else{
+        ssd1306_draw_string(&ssd, string_ocupadas, 82, 16, false);
+    }
+    ssd1306_draw_string(&ssd, "/", 90, 16, false);
+    ssd1306_draw_string(&ssd, string_total, 98, 16, false);
+    // Disponivel
+    ssd1306_draw_string(&ssd, "Disponivel:", 4, 28, false);
+    ssd1306_draw_string(&ssd, string_disponivel, 95, 28, false);
+
+    ssd1306_send_data(&ssd); // Envia para o display
+}
+
+// ISR dos Botões =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Tratamento de interrupções (Só para o Joystick)
+uint32_t last_isr_time = 0;
+void gpio_irq_handler(uint gpio, uint32_t events){
+    uint32_t current_isr_time = to_us_since_boot(get_absolute_time());
+    if(current_isr_time-last_isr_time > 200000){ // Debounce
+        last_isr_time = current_isr_time;
+        
+        // Liberando o Semaforo Binario
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE; 
+        xSemaphoreGiveFromISR(xSemBinario, &xHigherPriorityTaskWoken); // Libera o Semaforo Binario para a Task
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken); // Impede que seja impedido por uma tarefa de maior prioridade
+    }
+}
+
 // TASKS CRIADAS =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+// Task de entrada
+uint32_t last_add_time = 0;
+void vEntradaTask(void *params){
+    // Iniciando o Botão A para as leituras
+    gpio_init(BUTTON_A);
+    gpio_set_dir(BUTTON_A, GPIO_IN);
+    gpio_pull_up(BUTTON_A);
 
+    bool last_button_state = false;
 
+    while(true){
+        uint32_t current_time = to_us_since_boot(get_absolute_time()); // Tempo atual
+        bool current_button_state = gpio_get(BUTTON_A); // Estado atual do botão
+        if(!current_button_state && last_button_state && (current_time - last_add_time) > 200000){ // Pegando a borda de descida com debounce de 200ms
+            last_add_time = current_time; // Atualiza o ultimo tempo
+            
+            // Aguarda o semáforo de contagem
+            if(xSemaphoreTake(xSemContagem, portMAX_DELAY) == pdTRUE){
+                if(users_online == MAX_USERS){
+                    users_online=MAX_USERS;
+                }
+                else{
+                    users_online++; // Incrementa 1
+                }
+                
+                // Proteção do Mutex para o display
+                if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
+                    DisplayFrame(users_online); // Desenha o display
+                    xSemaphoreGive(xDisplayMutex); // Libera o Mutex
+                }
+                xSemaphoreGive(xSemContagem); // Libera o Semaforo de Contagem
+            }
+        }
+
+        last_button_state = current_button_state; // Atualiza o ultimo estado do botão 
+        vTaskDelay(pdMS_TO_TICKS(50)); // Reduz o consumo da CPU da task
+    }
+}
+
+// Task de saída
+uint32_t last_sub_time = 0;
+void vSaidaTask(void *params){
+    // Iniciando o Botão B para as leituras
+    gpio_init(BUTTON_B);
+    gpio_set_dir(BUTTON_B, GPIO_IN);
+    gpio_pull_up(BUTTON_B);
+
+    bool last_button_state = false;
+
+    while(true){
+        uint32_t current_time = to_us_since_boot(get_absolute_time()); // Tempo atual
+        bool current_button_state = gpio_get(BUTTON_B); // Estado atual do botão
+        if(!current_button_state && last_button_state && (current_time - last_sub_time) > 200000){ // Pegando a borda de descida com debounce de 200ms
+            last_sub_time = current_time; // Atualiza o ultimo tempo
+            
+            // Aguarda o semáforo de contagem
+            if(xSemaphoreTake(xSemContagem, portMAX_DELAY) == pdTRUE){
+                if(users_online==0){
+                    users_online=0;
+                }
+                else{
+                    users_online--; // Decrementa 1
+                }
+
+                // Proteção do Mutex para o display
+                if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
+                    DisplayFrame(users_online); // Desenha o display
+                    xSemaphoreGive(xDisplayMutex); // Libera o Mutex
+                }
+
+                xSemaphoreGive(xSemContagem); // Libera o Semaforo de Contagem
+            }
+        }
+
+        last_button_state = current_button_state; // Atualiza o ultimo estado do botão 
+        vTaskDelay(pdMS_TO_TICKS(50)); // Reduz o consumo da CPU da task
+    }
+}
+
+// Task de reset
+void vResetTask(void *params){
+    while(true){
+        // Bloqueado até existir a interrupção
+        if(xSemaphoreTake(xSemBinario, portMAX_DELAY) == pdTRUE){
+            users_online = 0; // Reseta os usuários para 0
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50)); // Reduz o consumo da CPU da task
+    }
+}
+
+void vRGBTask(void *params){
+    set_pwm(LED_RED, wrap);
+    set_pwm(LED_GREEN, wrap);
+    set_pwm(LED_BLUE, wrap);
+    
+    while(true){
+        // Vazio
+        if(users_online==0){
+            pwm_set_gpio_level(LED_RED, 0);
+            pwm_set_gpio_level(LED_GREEN, 0);
+            pwm_set_gpio_level(LED_BLUE, wrap*0.05);
+        }
+        // 2 vagas restantes
+        else if(users_online <= MAX_USERS-2){
+            pwm_set_gpio_level(LED_RED, 0);
+            pwm_set_gpio_level(LED_GREEN, wrap*0.05);
+            pwm_set_gpio_level(LED_BLUE, 0);
+        }
+        // 1 vaga restante
+        else if(users_online == MAX_USERS-1){
+            pwm_set_gpio_level(LED_RED, wrap*0.05);
+            pwm_set_gpio_level(LED_GREEN, wrap*0.05);
+            pwm_set_gpio_level(LED_BLUE, 0);
+        }
+        // Lotado
+        else{
+            pwm_set_gpio_level(LED_RED, wrap*0.05);
+            pwm_set_gpio_level(LED_GREEN, 0);
+            pwm_set_gpio_level(LED_BLUE, 0);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50)); 
+    }
+}
 
 // FUNÇÃO MAIN =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 int main(){
     stdio_init_all();
+
+    // Configurando as interrupções nos botões 
+    gpio_set_irq_enabled_with_callback(JOYSTICK_BUTTON, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
+
+    // Configurando a I2C
+    i2c_init(I2C_PORT, 400 * 1000);
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);                    // Set the GPIO pin function to I2C
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);                    // Set the GPIO pin function to I2C
+    gpio_pull_up(I2C_SDA);                                        // Pull up the data line
+    gpio_pull_up(I2C_SCL);                                        // Pull up the clock line
+    ssd1306_init(&ssd, WIDTH, HEIGHT, false, endereco, I2C_PORT); // Inicializa o display
+    ssd1306_config(&ssd);                                         // Configura o display
+    ssd1306_send_data(&ssd);                                      // Envia os dados para o display
+    // Limpa o display. O display inicia com todos os pixels apagados.
+    ssd1306_fill(&ssd, false);
+    ssd1306_send_data(&ssd);
+
+    DisplayFrame(users_online); // Desenha o display
+
+    // Criando os semaforos
+    xDisplayMutex = xSemaphoreCreateMutex();
+    xSemContagem = xSemaphoreCreateCounting(MAX_USERS, MAX_USERS);
+    xSemBinario = xSemaphoreCreateBinary();
+
     
     // Iniciando as Tasks
+    xTaskCreate(vRGBTask, "Task do RGB", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
+    xTaskCreate(vEntradaTask, "Task de Entrada", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
+    xTaskCreate(vSaidaTask, "Task de Saida", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
+    xTaskCreate(vResetTask, "Task de Reset", configMINIMAL_STACK_SIZE + 128, NULL, 3, NULL); // Maior prioridade
     
     vTaskStartScheduler();
     panic_unsupported();
