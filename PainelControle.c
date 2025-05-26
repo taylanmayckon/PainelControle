@@ -139,6 +139,23 @@ void updateLEDRGB(){
     }
 }
 
+void full_alert_beep(){
+    pwm_set_gpio_level(BUZZER_A, wrap*0.05);
+    pwm_set_gpio_level(BUZZER_B, wrap*0.05);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    pwm_set_gpio_level(BUZZER_A, 0);
+    pwm_set_gpio_level(BUZZER_B, 0);
+}
+
+void reset_alert_beep(){
+    pwm_set_gpio_level(BUZZER_A, wrap*0.05);
+    pwm_set_gpio_level(BUZZER_B, wrap*0.05);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    pwm_set_gpio_level(BUZZER_A, 0);
+    pwm_set_gpio_level(BUZZER_B, 0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+}
+
 // ISR dos Botões =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // Tratamento de interrupções (Só para o Joystick)
 uint32_t last_isr_time = 0;
@@ -174,7 +191,8 @@ void vEntradaTask(void *params){
             // Aguarda o semáforo de contagem
             if(xSemaphoreTake(xSemContagem, portMAX_DELAY) == pdTRUE){
                 if(users_online == MAX_USERS){
-                    users_online=MAX_USERS;
+                    users_online=MAX_USERS; // Limita a quantidade máxima de usuários
+                    full_alert_beep(); // Beep longo para indicar que está lotado
                 }
                 else{
                     users_online++; // Incrementa 1
@@ -246,6 +264,7 @@ void vResetTask(void *params){
             users_online = 0; // Reseta os usuários para 0
 
             updateLEDRGB(); // Atualiza o LED RGB
+            reset_alert_beep(); reset_alert_beep(); // Beep duplo do reset
 
             // Proteção do Mutex para o display
             if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
@@ -267,8 +286,11 @@ int main(){
     set_pwm(LED_RED, wrap);
     set_pwm(LED_GREEN, wrap);
     set_pwm(LED_BLUE, wrap);
-
     updateLEDRGB(); // Atualiza o LED RGB
+
+    // Iniciando os buzzers
+    set_pwm(BUZZER_A, wrap);
+    set_pwm(BUZZER_B, wrap);
 
     // Iniciando o Botão B para as leituras
     gpio_init(JOYSTICK_BUTTON);
