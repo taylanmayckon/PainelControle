@@ -209,6 +209,11 @@ void vResetTask(void *params){
         // Bloqueado até existir a interrupção
         if(xSemaphoreTake(xSemBinario, portMAX_DELAY) == pdTRUE){
             users_online = 0; // Reseta os usuários para 0
+            // Proteção do Mutex para o display
+            if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
+                DisplayFrame(users_online); // Desenha o display
+                xSemaphoreGive(xDisplayMutex); // Libera o Mutex
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(50)); // Reduz o consumo da CPU da task
@@ -255,7 +260,11 @@ void vRGBTask(void *params){
 int main(){
     stdio_init_all();
 
-    // Configurando as interrupções nos botões 
+    // Iniciando o Botão B para as leituras
+    gpio_init(JOYSTICK_BUTTON);
+    gpio_set_dir(JOYSTICK_BUTTON, GPIO_IN);
+    gpio_pull_up(JOYSTICK_BUTTON);
+    // Configurando a interrupção do JOYSTICK_BUTTON
     gpio_set_irq_enabled_with_callback(JOYSTICK_BUTTON, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
 
     // Configurando a I2C
@@ -275,7 +284,7 @@ int main(){
 
     // Criando os semaforos
     xDisplayMutex = xSemaphoreCreateMutex();
-    xSemContagem = xSemaphoreCreateCounting(MAX_USERS, MAX_USERS);
+    xSemContagem = xSemaphoreCreateCounting(MAX_USERS, 1); // Fila de tamanho MAX_USERS, 1 vaga para as tarefas
     xSemBinario = xSemaphoreCreateBinary();
 
     
