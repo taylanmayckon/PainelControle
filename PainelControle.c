@@ -72,13 +72,13 @@ void set_pwm(uint gpio, uint wrap){
 }
 
 // Função que desenha o frame fixo do display OLED
-void DisplayFrame(uint vagas_ocupadas){
+void DisplayFrame(){
     char string_ocupadas[4];
-    sprintf(string_ocupadas, "%d", vagas_ocupadas);
+    sprintf(string_ocupadas, "%d", users_online);
     char string_total[4];
     sprintf(string_total, "%d", MAX_USERS);
     char string_disponivel[4];
-    sprintf(string_disponivel, "%d", MAX_USERS-vagas_ocupadas);
+    sprintf(string_disponivel, "%d", MAX_USERS-users_online);
 
     ssd1306_fill(&ssd, false); // Limpa o display
 
@@ -104,8 +104,39 @@ void DisplayFrame(uint vagas_ocupadas){
     // Disponivel
     ssd1306_draw_string(&ssd, "Disponivel:", 4, 28, false);
     ssd1306_draw_string(&ssd, string_disponivel, 95, 28, false);
+    // Mensagem
+    ssd1306_line(&ssd, 0, 39, 127, 39, cor);
+
 
     ssd1306_send_data(&ssd); // Envia para o display
+}
+
+// Atualiza o LED RGB
+void updateLEDRGB(){
+    // Vazio
+    if(users_online==0){
+        pwm_set_gpio_level(LED_RED, 0);
+        pwm_set_gpio_level(LED_GREEN, 0);
+        pwm_set_gpio_level(LED_BLUE, wrap*0.05);
+    }
+    // 2 vagas restantes
+    else if(users_online <= MAX_USERS-2){
+        pwm_set_gpio_level(LED_RED, 0);
+        pwm_set_gpio_level(LED_GREEN, wrap*0.05);
+        pwm_set_gpio_level(LED_BLUE, 0);
+    }
+    // 1 vaga restante
+    else if(users_online == MAX_USERS-1){
+        pwm_set_gpio_level(LED_RED, wrap*0.05);
+        pwm_set_gpio_level(LED_GREEN, wrap*0.05);
+        pwm_set_gpio_level(LED_BLUE, 0);
+    }
+    // Lotado
+    else{
+        pwm_set_gpio_level(LED_RED, wrap*0.05);
+        pwm_set_gpio_level(LED_GREEN, 0);
+        pwm_set_gpio_level(LED_BLUE, 0);
+    }
 }
 
 // ISR dos Botões =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -149,9 +180,11 @@ void vEntradaTask(void *params){
                     users_online++; // Incrementa 1
                 }
                 
+                updateLEDRGB(); // Atualiza o LED RGB
+
                 // Proteção do Mutex para o display
                 if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
-                    DisplayFrame(users_online); // Desenha o display
+                    DisplayFrame(); // Desenha o display
                     xSemaphoreGive(xDisplayMutex); // Libera o Mutex
                 }
                 xSemaphoreGive(xSemContagem); // Libera o Semaforo de Contagem
@@ -188,9 +221,11 @@ void vSaidaTask(void *params){
                     users_online--; // Decrementa 1
                 }
 
+                updateLEDRGB(); // Atualiza o LED RGB
+
                 // Proteção do Mutex para o display
                 if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
-                    DisplayFrame(users_online); // Desenha o display
+                    DisplayFrame(); // Desenha o display
                     xSemaphoreGive(xDisplayMutex); // Libera o Mutex
                 }
 
@@ -209,9 +244,12 @@ void vResetTask(void *params){
         // Bloqueado até existir a interrupção
         if(xSemaphoreTake(xSemBinario, portMAX_DELAY) == pdTRUE){
             users_online = 0; // Reseta os usuários para 0
+
+            updateLEDRGB(); // Atualiza o LED RGB
+
             // Proteção do Mutex para o display
             if(xSemaphoreTake(xDisplayMutex, portMAX_DELAY) == pdTRUE){
-                DisplayFrame(users_online); // Desenha o display
+                DisplayFrame(); // Desenha o display
                 xSemaphoreGive(xDisplayMutex); // Libera o Mutex
             }
         }
@@ -220,45 +258,17 @@ void vResetTask(void *params){
     }
 }
 
-void vRGBTask(void *params){
-    set_pwm(LED_RED, wrap);
-    set_pwm(LED_GREEN, wrap);
-    set_pwm(LED_BLUE, wrap);
-    
-    while(true){
-        // Vazio
-        if(users_online==0){
-            pwm_set_gpio_level(LED_RED, 0);
-            pwm_set_gpio_level(LED_GREEN, 0);
-            pwm_set_gpio_level(LED_BLUE, wrap*0.05);
-        }
-        // 2 vagas restantes
-        else if(users_online <= MAX_USERS-2){
-            pwm_set_gpio_level(LED_RED, 0);
-            pwm_set_gpio_level(LED_GREEN, wrap*0.05);
-            pwm_set_gpio_level(LED_BLUE, 0);
-        }
-        // 1 vaga restante
-        else if(users_online == MAX_USERS-1){
-            pwm_set_gpio_level(LED_RED, wrap*0.05);
-            pwm_set_gpio_level(LED_GREEN, wrap*0.05);
-            pwm_set_gpio_level(LED_BLUE, 0);
-        }
-        // Lotado
-        else{
-            pwm_set_gpio_level(LED_RED, wrap*0.05);
-            pwm_set_gpio_level(LED_GREEN, 0);
-            pwm_set_gpio_level(LED_BLUE, 0);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(50)); 
-    }
-}
-
 // FUNÇÃO MAIN =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 int main(){
     stdio_init_all();
+
+    // Iniciando o LED RGB
+    set_pwm(LED_RED, wrap);
+    set_pwm(LED_GREEN, wrap);
+    set_pwm(LED_BLUE, wrap);
+
+    updateLEDRGB(); // Atualiza o LED RGB
 
     // Iniciando o Botão B para as leituras
     gpio_init(JOYSTICK_BUTTON);
@@ -289,9 +299,8 @@ int main(){
 
     
     // Iniciando as Tasks
-    xTaskCreate(vRGBTask, "Task do RGB", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
-    xTaskCreate(vEntradaTask, "Task de Entrada", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
-    xTaskCreate(vSaidaTask, "Task de Saida", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
+    xTaskCreate(vEntradaTask, "Task de Entrada", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
+    xTaskCreate(vSaidaTask, "Task de Saida", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
     xTaskCreate(vResetTask, "Task de Reset", configMINIMAL_STACK_SIZE + 128, NULL, 3, NULL); // Maior prioridade
     
     vTaskStartScheduler();
