@@ -37,7 +37,7 @@
 #define IS_RGBW false
 #define LED_MATRIX_PIN 7
 // Máximo de usuários
-#define MAX_USERS 9
+#define MAX_USERS 99
 
 // Variáveis da PIO declaradas no escopo global
 PIO pio;
@@ -84,28 +84,44 @@ void DisplayFrame(){
 
     // Frame que será reutilizado para todos
     ssd1306_rect(&ssd, 0, 0, 128, 64, cor, !cor);
-    // Nome superior
+    // Mensagem superior (Nome do projeto e vagas ocupadas/totais)
     ssd1306_rect(&ssd, 0, 0, 128, 12, cor, cor); // Fundo preenchido
-    ssd1306_draw_string(&ssd, "PainelControle", 7, 3, true);
-    // Ocupado
-    ssd1306_draw_string(&ssd, "Ocupado:", 4, 16, false);
+    ssd1306_draw_string(&ssd, "BioCarga", 4, 3, true);    
     // Deslocando o texto conforme a quantidade de vagas
-    if(users_online>=100){
-        ssd1306_draw_string(&ssd, string_ocupadas, 66, 16, false);
-    }
-    else if(users_online >=10){
-        ssd1306_draw_string(&ssd, string_ocupadas, 74, 16, false);
+    if(users_online >=10){
+        ssd1306_draw_string(&ssd, string_ocupadas, 83, 3, true);
     }
     else{
-        ssd1306_draw_string(&ssd, string_ocupadas, 82, 16, false);
+        ssd1306_draw_string(&ssd, string_ocupadas, 91, 3, true);
     }
-    ssd1306_draw_string(&ssd, "/", 90, 16, false);
-    ssd1306_draw_string(&ssd, string_total, 98, 16, false);
-    // Disponivel
-    ssd1306_draw_string(&ssd, "Disponivel:", 4, 28, false);
+    ssd1306_draw_string(&ssd, "/", 99, 3, true);
+    ssd1306_draw_string(&ssd, string_total, 107, 3, true);
+    // Vagas ocupadas
+    ssd1306_draw_string(&ssd, "OCUPADAS:", 4, 16, false);
+    ssd1306_draw_string(&ssd, string_ocupadas, 95, 16, false);
+    // Vagas disponiveis
+    ssd1306_draw_string(&ssd, "DISPONIVEL:", 4, 28, false);
     ssd1306_draw_string(&ssd, string_disponivel, 95, 28, false);
     // Mensagem
-    ssd1306_line(&ssd, 0, 39, 127, 39, cor);
+    ssd1306_line(&ssd, 0, 39, 127, 39, cor); // Divisória
+    // Se tiver vagas livres
+    if(users_online <= MAX_USERS-2){
+        ssd1306_draw_string(&ssd, "ESTACAO LIVRE", 11, 43, false);
+        ssd1306_draw_string(&ssd, "CARREGUE JA!", 15, 53, false);
+    }
+    // Ultima vaga livre
+    else if(users_online == MAX_USERS-1){
+        ssd1306_draw_string(&ssd, "ULTIMA VAGA!", 15, 43, false);
+        ssd1306_draw_string(&ssd, "SEJA RAPIDO! :D", 3, 53, false);
+    }
+    // Lotado
+    else{
+        ssd1306_draw_string(&ssd, "LOTADO!", 35, 43, false);
+        ssd1306_draw_string(&ssd, "AGUARDE VAGAS", 11, 53, false);
+    }
+    
+
+
 
 
     ssd1306_send_data(&ssd); // Envia para o display
