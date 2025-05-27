@@ -13,6 +13,103 @@ Led_frame led_buffer= {{
     {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, 
 }};
 
+// FRAMES UTILIZADOS
+// Num 0
+bool frame_0[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 0, 0, 0, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+// Num 1
+bool frame_1[NUM_PIXELS] = {
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 1, 1, 1, 0,
+};
+// Num 2
+bool frame_2[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0,
+    1, 1, 1, 1, 1,
+};
+// Num 3
+bool frame_3[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+// Num 4
+bool frame_4[NUM_PIXELS] = {
+    1, 0, 0, 0, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    0, 0, 0, 0, 1,
+};
+// Num 5
+bool frame_5[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+// Num 6
+bool frame_6[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0,
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+// Num 7
+bool frame_7[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    0, 0, 0, 0, 1,
+    0, 0, 0, 0, 1,
+    0, 0, 0, 0, 1,
+};
+// Num 8
+bool frame_8[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+};
+// Num 9
+bool frame_9[NUM_PIXELS] = {
+    1, 1, 1, 1, 1,
+    1, 0, 0, 0, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 0, 1,
+    0, 0, 0, 0, 1,
+};
+
+// Vetor que armazena os ponteiros de cada frame criado anteriormente
+bool *all_frames[10] = {
+    frame_0,
+    frame_1,
+    frame_2,
+    frame_3,
+    frame_4,
+    frame_5,
+    frame_6,
+    frame_7,
+    frame_8,
+    frame_9
+};
+
+
 static inline void put_pixel(uint32_t pixel_grb){
     pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
 }
@@ -38,7 +135,6 @@ void set_leds(float intensidade){
 void matrix_update_leds(Led_frame *frame, float intensidade){
     // Ordenando corretamente o vetor recebido no buffer
 
-    // Organiza melhor essa lógica, talvez refatorando como uma matriz [5][5] ?
     int j = 0; // Variável para controle do index espelhado
     for(int i=0; i<25; i++){
         if(i>4 && i<10){
@@ -55,4 +151,20 @@ void matrix_update_leds(Led_frame *frame, float intensidade){
         }
     }
     set_leds(intensidade);
+}
+
+// Atualiza o frame para matriz de leds com o numero desejado
+Led_frame update_frame_num(Led_frame *frame, int num, Led_color color){
+    // Resgata o frame de booleanos do vetor de ponteiros 
+    bool *selected_frame = all_frames[num];
+    Led_color empty = {0, 0, 0};
+
+    for(int i=0; i<25; i++){
+        if(selected_frame[i]){
+            frame->led[i] = color;
+        }
+        else{
+            frame->led[i] = empty;
+        }
+    }
 }

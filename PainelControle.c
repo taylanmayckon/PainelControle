@@ -120,10 +120,6 @@ void DisplayFrame(){
         ssd1306_draw_string(&ssd, "AGUARDE VAGAS", 11, 53, false);
     }
     
-
-
-
-
     ssd1306_send_data(&ssd); // Envia para o display
 }
 
@@ -293,8 +289,48 @@ void vResetTask(void *params){
     }
 }
 
-// FUNÇÃO MAIN =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+// Task para controlar a matriz de leds
+void vLedMatrixTask(void *params){
+    // Inicializando a PIO
+    pio = pio0;
+    sm = 0;
+    uint offset = pio_add_program(pio, &ws2812_program);
+    ws2812_program_init(pio, sm, offset, LED_MATRIX_PIN, 800000, IS_RGBW);
 
+    // Cor vermelha
+    Led_color green = {0, 255, 0};
+    Led_color vazio = {0, 0, 0};
+
+    // Matrizes que receberão valores
+    Led_frame matriz_unidade;
+    Led_frame matriz_dezena;
+    Led_frame empty = {
+        vazio, vazio, vazio, vazio, vazio,
+        vazio, vazio, vazio, vazio, vazio,
+        vazio, vazio, vazio, vazio, vazio,
+        vazio, vazio, vazio, vazio, vazio,
+        vazio, vazio, vazio, vazio, vazio,
+    };
+
+    while(true){
+        int unidade = users_online%10;
+        int dezena = users_online/10;
+
+        // Pegando os valores para 
+        update_frame_num(&matriz_unidade, unidade, green);
+        update_frame_num(&matriz_dezena, dezena, green);
+
+        matrix_update_leds(&matriz_dezena, 0.01);
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
+        matrix_update_leds(&matriz_unidade, 0.01);
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
+        matrix_update_leds(&empty, 0.01);
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
+    }
+}
+
+
+// FUNÇÃO MAIN =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 int main(){
     stdio_init_all();
 
@@ -337,9 +373,11 @@ int main(){
 
     
     // Iniciando as Tasks
-    xTaskCreate(vEntradaTask, "Task de Entrada", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
-    xTaskCreate(vSaidaTask, "Task de Saida", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
-    xTaskCreate(vResetTask, "Task de Reset", configMINIMAL_STACK_SIZE + 128, NULL, 3, NULL); // Maior prioridade
+    xTaskCreate(vLedMatrixTask, "Matriz de LEDs", configMINIMAL_STACK_SIZE + 128, NULL, 1, NULL); // Prioridade baixa
+    xTaskCreate(vEntradaTask, "Task de Entrada", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
+    xTaskCreate(vSaidaTask, "Task de Saida", configMINIMAL_STACK_SIZE + 128, NULL, 2, NULL); // Prioridade média
+    xTaskCreate(vResetTask, "Task de Reset", configMINIMAL_STACK_SIZE + 128, NULL, 4, NULL); // Maior prioridade
+
     
     vTaskStartScheduler();
     panic_unsupported();

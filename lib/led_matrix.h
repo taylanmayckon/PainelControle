@@ -29,4 +29,7 @@ void set_leds(float intensidade);
 // Função genérica para atualiza matriz
 void matrix_update_leds(Led_frame *frame, float intensidade);
 
+// Função para colocar um numero no frame para depois colocar na matriz de leds
+Led_frame update_frame_num(Led_frame *frame, int num, Led_color color);
+
 #endif
