@@ -151,6 +151,7 @@ void updateLEDRGB(){
     }
 }
 
+// Beep de lotação
 void full_alert_beep(){
     pwm_set_gpio_level(BUZZER_A, wrap*0.05);
     pwm_set_gpio_level(BUZZER_B, wrap*0.05);
@@ -159,6 +160,7 @@ void full_alert_beep(){
     pwm_set_gpio_level(BUZZER_B, 0);
 }
 
+// Beep de reset (tem que ser chamado 2x dessa forma)
 void reset_alert_beep(){
     pwm_set_gpio_level(BUZZER_A, wrap*0.05);
     pwm_set_gpio_level(BUZZER_B, wrap*0.05);
@@ -192,7 +194,7 @@ void vEntradaTask(void *params){
     gpio_set_dir(BUTTON_A, GPIO_IN);
     gpio_pull_up(BUTTON_A);
 
-    bool last_button_state = false;
+    bool last_button_state = false; // Ultimo estado do botao
 
     while(true){
         uint32_t current_time = to_us_since_boot(get_absolute_time()); // Tempo atual
@@ -234,7 +236,7 @@ void vSaidaTask(void *params){
     gpio_set_dir(BUTTON_B, GPIO_IN);
     gpio_pull_up(BUTTON_B);
 
-    bool last_button_state = false;
+    bool last_button_state = false; // Ultimo estado do botao
 
     while(true){
         uint32_t current_time = to_us_since_boot(get_absolute_time()); // Tempo atual
@@ -320,6 +322,7 @@ void vLedMatrixTask(void *params){
         update_frame_num(&matriz_unidade, unidade, green);
         update_frame_num(&matriz_dezena, dezena, green);
 
+        // Exibindo a quantidade de vagas na matriz de leds
         matrix_update_leds(&matriz_dezena, 0.01);
         vTaskDelay(pdMS_TO_TICKS(1000)); 
         matrix_update_leds(&matriz_unidade, 0.01);
