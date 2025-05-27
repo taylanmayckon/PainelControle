@@ -1,4 +1,4 @@
-# 🤖 BioCarga - BitDogLab 🤖
+# ⚡ BioCarga - BitDogLab ⚡
 
 O BioCarga é a 4º atividade da Fase 2 do EmbarcaTech, ele consiste em um Painel de Controle Interativo com Acesso Concorrente, que gerencia os acessos à uma estação de carregamento de veículos simples elétricos, como patinetes. Ao longo do projeto, foram utilizados recursos de Mutex, Semáforo de Contagem e Semáforo Binário, todos fornecidos através do FreeRTOS.
 
